@@ -76,14 +76,15 @@ Scene getScene() {
 	for (int i = 0; i < NUM_SPHERES; i++) {
 		scene.spheres[i] = Sphere(vec3(0.), -1.0);
 	}
-//	scene.spheres[0] = Sphere(vec3(3.0, 1.5, 0.0), 0.5);
+	scene.spheres[0] = Sphere(vec3(3.0, 1.5, 0.0), 0.5);
 //	scene.spheres[0] = Sphere(vec3(0.0), 0.5);
 	
 	return scene;
 }
 
 vec3 cameraOrigin() {
-	vec3 origin = vec3(5.0 * sin(TIME), 2.0, 0.0);
+	vec3 origin = vec3(0., 1., 0.);
+//	vec3 origin = vec3(5.0 * sin(TIME), 2.0, 0.0);
 //	origin = vec3(0.0, 1.0, -1.5);
 //	origin.x += -cos(TIME*1.+.7) + 0.;
 
@@ -99,12 +100,13 @@ vec3 cameraLook() {
 	float scale = 1.0;
 	float tscale = 5.;
 	
-//	pos.x = sin(TIME / tscale) * scale;
-//	pos.y = 1.5 + sin(TIME * 16. / tscale) * 0.25;
-//	pos.z = -cos(TIME / tscale) * scale;
+	pos.x = sin(TIME / tscale) * scale;
+	pos.y = 1.5 + sin(TIME * 16. / tscale) * 0.25;
+	pos.z = -cos(TIME / tscale) * scale;
 
 //	return vec3(0., 1., 0.);
-//	return vec3(3.0, 1.5, 0.0);
+	return vec3(3.0, 1.5, 0.0);
+//	return vec3(3.0, 1.5, 0.0) + pos / 2.;
 	
 	return pos;
 }
@@ -113,9 +115,9 @@ Ray cameraRay(vec2 uv) {
 	vec3 origin = cameraOrigin();
 	vec3 pos = cameraLook();
 	mat4 camToWorld = lookAt(origin, pos, vec3(0., -1., 0.));
-	origin = (camToWorld * vec4(vec3(0.), 1.)).xyz; // recompute origin from camToWorld, but not needed
+//	origin = (camToWorld * vec4(vec3(0.), 1.)).xyz; // recompute origin from camToWorld, but not needed
 	
-	mat4 matrix = perspective(90.0, 1.0, .1, 10.0);
+	mat4 matrix = perspective(90, 16.0 / 9.0, .1, 10.0);
 	matrix = inverse(matrix); // homogenous to camera
 	
 	vec3 direction = (matrix * vec4(uv, 0., 1.)).xyz; // convert screen coord (depth = 0, w=1 bc position) into camera direction
@@ -135,6 +137,11 @@ float groundDistance(Ray ray, float ground) {
 
 void groundIntersect(Ray ray, float ground, inout RayHit hit) {
 	float dist = groundDistance(ray, ground);
+	
+	if (dist > 5.) {
+		return;
+	}
+	
 	if ((dist > 0.0) && (dist < hit.dist || hit.dist < 0.)) {
 		hit.dist = dist;
 		hit.pos = ray.pos + (dist * ray.dir);
@@ -177,21 +184,28 @@ RayHit trace(Ray ray) {
 }
 
 // convert ray direction to equirectangular mapping
-vec2 hdri(Ray ray) {
+vec2 hdri_pos(Ray ray) {
 	float theta = acos(ray.dir.y) / PI;
 	float phi = atan(ray.dir.x, -ray.dir.z) / PI + .5;
 	return vec2(phi, theta); // ensure -1 <= x <= 1
 }
 
+vec3 hdri_lookup(sampler2D tex, Ray ray) {
+	return texture(tex, hdri_pos(ray)).xyz;
+}
+
 vec3 shadeHdri(vec3 color) {
+//	return color;
+//	return pow(color, vec3(1. / 2.2));
+	
 	// clamp highs
 	vec3 bias = vec3(1.0);
 	color = min(color, bias) / bias;
 	
 	// lighten image, compress dynamic range
-	const int iterations = 8;
+	const int iterations = 6;
 	for (int i = 0; i < iterations; i++) {
-		color = log2(color + 1.);
+		color = log2(color + 1.0);
 	}
 	
 	return color;
@@ -221,11 +235,11 @@ vec3 shade(Ray ray, RayHit hit, vec3 hdri) {
 		f = log(f) / log(10.);
 		f = saturate(f);
 		f = 1. - f;
-		color *= f;
+//		color *= f;
 		
-		color = hit.pos*.5 + .5;
+//		color = hit.pos*.5 + .5;
 		
-		color = mix(hdriShaded, color, .4);
+		color = mix(hdriShaded, color, 0.5);
 	} else {
 		color = hdriShaded;
 	}
@@ -235,14 +249,26 @@ vec3 shade(Ray ray, RayHit hit, vec3 hdri) {
 
 void fragment() {
 	vec2 uv = UV;
-	uv = vec2(uv.x, 1. + -uv.y);
+//	uv.y = 1. - uv.y;
 	uv = uv * 2. - 1.;
 	
-	Ray ray = cameraRay(UV);
-	RayHit hit = trace(ray);
+	vec3 color = vec3(0.);
 	
-	vec3 hdri = texture(TEXTURE, hdri(ray)).xyz; // TEXTURE only works in fragment()
-	vec3 color = shade(ray, hit, hdri);
+	const int iters = 1;
+	const vec2 offsets[5] = {vec2(0.), vec2(-0.5, 0.), vec2(0.5, 0.), vec2(0., -0.5), vec2(.0, 0.5)};
 	
+	for(int i = 0; i < iters; i++) {
+//		Ray ray = cameraRay(uv + SCREEN_PIXEL_SIZE.xy * offsets[i]);
+		Ray ray = cameraRay(uv);
+		RayHit hit = trace(ray);
+
+	//	vec3 hdri = texture(TEXTURE, hdri(ray)).xyz; // TEXTURE only works in fragment()
+		vec3 hdri = hdri_lookup(TEXTURE, ray); // TEXTURE only works in fragment()
+		vec3 _color = shade(ray, hit, hdri);
+
+		color += _color / float(iters);
+	}
+	
+//	color = vec3(uv, 0.);
 	COLOR = vec4(color, 1.0);
 }
