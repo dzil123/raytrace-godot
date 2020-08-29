@@ -2,6 +2,8 @@ shader_type canvas_item;
 const float PI = 3.1415926535897932384626433;
 const float ES = 0.0000001; // epsilon
 
+uniform sampler2D matcap : hint_albedo;
+
 // http://three-eyed-games.com/2018/05/03/gpu-ray-tracing-in-unity-part-1/
 
 // camera coordinates to homogenous coords
@@ -238,6 +240,9 @@ vec3 shade(Ray ray, RayHit hit, vec3 hdri) {
 //		color *= f;
 		
 //		color = hit.pos*.5 + .5;
+
+		vec2 uv = -hit.normal.zy * 0.5 + 0.5; // why .zy?
+		color = texture(matcap, uv).xyz; // the matcap looks stretched
 		
 		color = mix(hdriShaded, color, 0.5);
 	} else {
