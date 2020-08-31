@@ -64,35 +64,65 @@ float getAspect(vec2 pixelSize) {
 struct Ray {
 	vec3 pos; // position
 	vec3 dir; // direction (normalized)
+	vec3 energy; // color
 };
+
+struct Material {
+	vec3 specular;
+	vec3 emissive;
+};
+
+Material matBlack() {
+	return Material(vec3(0.0), vec3(0.));
+}
+
+Material matMirror() {
+	return Material(vec3(0.8), vec3(0.));
+}
+
+Material matMirror2(vec3 mirror) {
+	return Material(mirror, vec3(0.));
+}
+
+Material matEmmisive(vec3 color) {
+	return Material(vec3(0.8), color);
+}
 
 struct RayHit {
 	vec3 pos; // position
 	float dist; // distance
 	vec3 normal;
+	Material mat;
 };
 
 struct Sphere {
 	vec3 pos;
 	float radius;
-//	vec3 color;
+	Material mat;
 };
 
-const int NUM_SPHERES = 2;
+struct Ground {
+	float y;
+	Material mat;
+};
+
+const int NUM_SPHERES = 5;
 struct Scene {
-	float ground;
-	Sphere spheres[2]; // cannot put NUM_SPHERES here
+	Ground ground;
+	Sphere spheres[5]; // cannot put NUM_SPHERES here
 };
 
 Scene getScene() {
 	Scene scene;
-	scene.ground = 0.;
+	scene.ground = Ground(0., Material(vec3(1.0), vec3(0.)));
 	
 	for (int i = 0; i < NUM_SPHERES; i++) {
-		scene.spheres[i] = Sphere(vec3(0.), -1.0);
+		scene.spheres[i] = Sphere(vec3(0.), -1.0, matBlack());
 	}
-	scene.spheres[0] = Sphere(vec3(3.0, 1.5, 0.0), 0.5);
+	scene.spheres[0] = Sphere(vec3(3.0, 1.5, 0.0), 0.5, matMirror());
 //	scene.spheres[0] = Sphere(vec3(0.0), 0.5);
+	scene.spheres[1] = Sphere(vec3(4.0, 2.5 + sin(TIME), 2.0), 1.4, matEmmisive(vec3(0.6, 0.1, 0.1)));
+	scene.spheres[2] = Sphere(vec3(10.0, -2.0, -2.0), 4.0, matMirror2(vec3(0.0, 0.4, 0.6)));
 	
 	return scene;
 }
@@ -120,7 +150,7 @@ vec3 cameraLook() {
 	pos.z = cos(TIME / tscale) * scale;
 
 //	return vec3(0., 1., 0.);
-//	return vec3(3.0, 1.5, 0.0);
+	return vec3(3.0, 1.5, 0.0);
 //	return vec3(3.0, 1.5, 0.0) + pos / 2.;
 	
 	return pos;
@@ -139,28 +169,35 @@ Ray cameraRay(vec2 uv, float aspect) {
 	direction = (camToWorld * vec4(direction, 0.)).xyz; // convert camera direction into world direction
 	direction = normalize(direction);
 	
-	return Ray(origin, direction);
+	return Ray(origin, direction, vec3(1.0));
 }
 
 RayHit newRayHit() {
-	return RayHit(vec3(0.), -1.0, vec3(0., 1., 0.));
+	return RayHit(vec3(0.), -1.0, vec3(0., 1., 0.), matBlack());
 }
 
 float groundDistance(Ray ray, float ground) {
 	return -(ray.pos.y - ground) / ray.dir.y; // negative = no hit
 }
 
-void groundIntersect(Ray ray, float ground, inout RayHit hit) {
-	float dist = groundDistance(ray, ground);
+void groundIntersect(Ray ray, Ground ground, inout RayHit hit) {
+	float dist = groundDistance(ray, ground.y);
 	
-	if (dist > 5.) {
+	vec3 pos = ray.pos + (dist * ray.dir);
+	
+//	if (length(pos) > 1.) {
+//		return;
+//	}
+	
+	if (abs(pos.x) > 3. || abs(pos.z) > 3.) {
 		return;
 	}
 	
 	if ((dist > 0.0) && (dist < hit.dist || hit.dist < 0.)) {
 		hit.dist = dist;
-		hit.pos = ray.pos + (dist * ray.dir);
+		hit.pos = pos;
 		hit.normal = vec3(0., 1., 0.);
+		hit.mat = ground.mat;
 	}
 }
 
@@ -178,6 +215,7 @@ void sphereIntersect(Ray ray, Sphere sphere, inout RayHit hit) {
 		hit.dist = dist;
 		hit.pos = ray.pos + (dist * ray.dir);
 		hit.normal = normalize(hit.pos - sphere.pos);
+		hit.mat = sphere.mat;
 	}
 }
 
@@ -218,7 +256,7 @@ vec3 shadeHdri(vec3 color) {
 	color = min(color, bias) / bias;
 	
 	// lighten image, compress dynamic range
-	const int iterations = 6;
+	const int iterations = 7;
 	for (int i = 0; i < iterations; i++) {
 		color = log2(color + 1.0);
 	}
@@ -226,42 +264,29 @@ vec3 shadeHdri(vec3 color) {
 	return color;
 }
 
-vec3 shade(Ray ray, RayHit hit, vec3 hdri) {
+vec3 shade(inout Ray ray, RayHit hit, vec3 hdri) {
 	vec3 hdriShaded = shadeHdri(hdri);
 	vec3 color = vec3(0.);
 	
-	/*
-		float ground = groundDistance(ray, 0.);
-		vec3 nice = vec3(0.6, 0.8, 0.8);
-		if (ground > 0.) {
-			float f = ground;
-			f = log(f) \ log(4.);
-			f = saturate(f);
-			f = 1. - f;
-			color = mix(nice, color, f);
-		} else {
-			color = nice * .95;
-	*/
-	
 	if (hit.dist > 0.) {
-		color = hit.normal * 0.5 + 0.5;
+//		color = hit.normal * 0.5 + 0.5; // color by normals
 		
-		float f = hit.dist;
-		f = log(f) / log(10.);
-		f = saturate(f);
-		f = 1. - f;
-//		color *= f;
-		
-//		color = hit.pos*.5 + .5;
+//		color = hit.pos*.5 + .5; // color by positon
 
-		vec2 uv = -hit.normal.zy * 0.5 + 0.5; // why .zy?
-		color = texture(matcap, uv).xyz; // the matcap looks stretched
+//		vec2 uv = -hit.normal.zy * 0.5 + 0.5; // why .zy? // color by matcap
+//		color = texture(matcap, uv).xyz; // the matcap looks stretched
 		
-		color = mix(hdriShaded, color, 0.5);
+//		color = mix(hdriShaded, color, 0.5); // fade color
+
+// 		perfect mirror reflection
+		ray.pos = hit.pos + hit.normal * 0.001;
+		ray.dir = reflect(ray.dir, hit.normal);
+		ray.energy *= hit.mat.specular;
+		color = hit.mat.emissive;
 	} else {
 		color = hdriShaded;
+		ray.energy = vec3(0.);
 	}
-	
 	return color;
 }
 
@@ -279,12 +304,22 @@ void fragment() {
 //		Ray ray = cameraRay(uv + SCREEN_PIXEL_SIZE.xy * offsets[i]);
 //		Ray ray = cameraRay(uv, getAspect(TEXTURE));
 		Ray ray = cameraRay(uv, getAspect(TEXTURE_PIXEL_SIZE));
-		RayHit hit = trace(ray);
-
-	//	vec3 hdri = texture(TEXTURE, hdri(ray)).xyz; // TEXTURE only works in fragment()
-		vec3 hdri = hdri_lookup(TEXTURE, ray); // TEXTURE only works in fragment()
-		vec3 _color = shade(ray, hit, hdri);
-
+		
+		vec3 _color = vec3(0.);
+		const int traceIters = 100;
+		
+		for(int j = 0; j < traceIters; j++) {
+			RayHit hit = trace(ray);
+			
+			//	vec3 hdri = texture(TEXTURE, hdri(ray)).xyz; // TEXTURE only works in fragment()
+			vec3 hdri = hdri_lookup(TEXTURE, ray); // TEXTURE only works in fragment()
+			_color += ray.energy * shade(ray, hit, hdri);
+		
+			if (dot(ray.energy, ray.energy) < ES) {
+				break;
+			}
+		}
+		
 		color += _color / float(iters);
 	}
 	

@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=2]
 
 [ext_resource path="res://mat.tres" type="Material" id=1]
-[ext_resource path="res://cape_hill_1k.hdr" type="Texture2D" id=2]
+[ext_resource path="res://cape_hill_4k.hdr" type="Texture2D" id=2]
 
 [node name="Scene" type="Node2D"]
 script = null
@@ -9,6 +9,7 @@ script = null
 [node name="Sprite" type="Sprite2D" parent="."]
 texture_repeat = 2
 material = ExtResource( 1 )
-position = Vector2( 413.286, 97.6316 )
+scale = Vector2( 0.25025, 0.25025 )
 texture = ExtResource( 2 )
+centered = false
 script = null
