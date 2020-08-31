@@ -48,6 +48,19 @@ float saturate(float f) {
 	return clamp(f, 0.0, 1.0);
 }
 
+//float getAspect(sampler2D tex) {
+//	return 4.0;
+//	ivec2 isize = ivec2(0);
+////	isize = textureSize(tex, 1); // this line crashes the shader wtf
+//	vec2 size = vec2(float(isize.x), float(isize.y));
+//	return size.x / size.y;
+//}
+
+float getAspect(vec2 pixelSize) {
+	pixelSize = 1.0 / pixelSize;
+	return pixelSize.x / pixelSize.y;
+}
+
 struct Ray {
 	vec3 pos; // position
 	vec3 dir; // direction (normalized)
@@ -104,22 +117,22 @@ vec3 cameraLook() {
 	
 	pos.x = sin(TIME / tscale) * scale;
 	pos.y = 1.5 + sin(TIME * 16. / tscale) * 0.25;
-	pos.z = -cos(TIME / tscale) * scale;
+	pos.z = cos(TIME / tscale) * scale;
 
 //	return vec3(0., 1., 0.);
-	return vec3(3.0, 1.5, 0.0);
+//	return vec3(3.0, 1.5, 0.0);
 //	return vec3(3.0, 1.5, 0.0) + pos / 2.;
 	
 	return pos;
 }
 
-Ray cameraRay(vec2 uv) {
+Ray cameraRay(vec2 uv, float aspect) {
 	vec3 origin = cameraOrigin();
 	vec3 pos = cameraLook();
 	mat4 camToWorld = lookAt(origin, pos, vec3(0., -1., 0.));
 //	origin = (camToWorld * vec4(vec3(0.), 1.)).xyz; // recompute origin from camToWorld, but not needed
 	
-	mat4 matrix = perspective(90, 16.0 / 9.0, .1, 10.0);
+	mat4 matrix = perspective(90, aspect, .1, 10.0);
 	matrix = inverse(matrix); // homogenous to camera
 	
 	vec3 direction = (matrix * vec4(uv, 0., 1.)).xyz; // convert screen coord (depth = 0, w=1 bc position) into camera direction
@@ -189,7 +202,7 @@ RayHit trace(Ray ray) {
 vec2 hdri_pos(Ray ray) {
 	float theta = acos(ray.dir.y) / PI;
 	float phi = atan(ray.dir.x, -ray.dir.z) / PI + .5;
-	return vec2(phi, theta); // ensure -1 <= x <= 1
+	return vec2(-phi, theta); // ensure -1 <= x <= 1
 }
 
 vec3 hdri_lookup(sampler2D tex, Ray ray) {
@@ -264,7 +277,8 @@ void fragment() {
 	
 	for(int i = 0; i < iters; i++) {
 //		Ray ray = cameraRay(uv + SCREEN_PIXEL_SIZE.xy * offsets[i]);
-		Ray ray = cameraRay(uv);
+//		Ray ray = cameraRay(uv, getAspect(TEXTURE));
+		Ray ray = cameraRay(uv, getAspect(TEXTURE_PIXEL_SIZE));
 		RayHit hit = trace(ray);
 
 	//	vec3 hdri = texture(TEXTURE, hdri(ray)).xyz; // TEXTURE only works in fragment()
